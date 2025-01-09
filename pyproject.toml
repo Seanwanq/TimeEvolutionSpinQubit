@@ -1,0 +1,18 @@
+[project]
+name = "version-9-jan-2025-catcodedrive"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "imageio>=2.36.1",
+    "ipykernel>=6.29.5",
+    "ipympl>=0.9.6",
+    "ipynb>=0.5.1",
+    "matplotlib>=3.10.0",
+    "moviepy>=2.1.1",
+    "numpy>=2.0.2",
+    "qutip>=5.1.0",
+    "scipy>=1.15.0",
+    "tqdm>=4.67.1",
+]
