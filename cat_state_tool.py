@@ -7,6 +7,7 @@ from qutip import Qobj
 from moviepy import ImageSequenceClip, concatenate_videoclips
 import os
 import re
+import gc
 
 
 class TimeDependentCatStateEvolution:
@@ -232,6 +233,11 @@ class TimeDependentCatStateEvolution:
         selected_density_matrices = [density_matrix_history[int(i)] for i in indices]
         times = [i * self.dt for i in indices]
         for i in tqdm(range(0, len(selected_density_matrices))):
+
+            plt.clf()
+            plt.close('all')
+            gc.collect()
+
             fig, ax = plt.subplots(figsize=(10, 8))
             wigner = self.wigner_spin_blocks_sum(
                 selected_density_matrices[i], xvec, pvec
