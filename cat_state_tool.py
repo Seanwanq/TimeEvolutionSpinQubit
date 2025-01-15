@@ -68,8 +68,19 @@ class TimeDependentCatStateEvolution:
         cat_state = coherent_plus + coherent_minus
         return cat_state / np.linalg.norm(cat_state)
 
+    def prepare_initial_state(self):
+        spin_down = self.basis(2, 1)
+        vacuum = self.coherent(0, 0)
+        initial_state = np.kron(spin_down, vacuum)
+        H = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
+        Z = np.array([[1, 0], [0, -1]], dtype=complex)
+        combined_gate = Z @ H
+        combined_total = np.kron(combined_gate, np.eye(self.hilbert_dimension))
+        final_state = combined_total @ initial_state
+        return final_state / np.linalg.norm(final_state)
+
     def density_matrix_initial(self):
-        cat_state = self.time_dependent_cat_state(0)
+        cat_state = self.prepare_initial_state()
         density_matrix = np.outer(cat_state, cat_state.conj())
         trace = np.abs(np.trace(density_matrix))
         if not np.isclose(trace, 1.0, rtol=1e-10):
@@ -233,9 +244,8 @@ class TimeDependentCatStateEvolution:
         selected_density_matrices = [density_matrix_history[int(i)] for i in indices]
         times = [i * self.dt for i in indices]
         for i in tqdm(range(0, len(selected_density_matrices))):
-
             plt.clf()
-            plt.close('all')
+            plt.close("all")
             gc.collect()
 
             fig, ax = plt.subplots(figsize=(10, 8))
@@ -243,7 +253,8 @@ class TimeDependentCatStateEvolution:
                 selected_density_matrices[i], xvec, pvec
             )
             x, y = np.meshgrid(xvec, pvec)
-            wlim = max(abs(wigner.min()), abs(wigner.max()))
+            # wlim = max(abs(wigner.min()), abs(wigner.max()))
+            wlim = 0.68
             levels = np.linspace(-wlim, wlim, 100)
             c = ax.contourf(x, y, wigner, levels=levels, cmap="seismic")
             plt.colorbar(c)
@@ -266,7 +277,7 @@ def animate_wigner_2d(foldername, filename="wigner_2d", fps=5, batch_size=10):
     png_files.sort(key=extract_time)
 
     temp_clips = []
-    for i in range(0, len(png_files), batch_size):
+    for i in tqdm(range(0, len(png_files), batch_size)):
         batch = png_files[i : i + batch_size]
         clip = ImageSequenceClip([os.path.join(foldername, f) for f in batch], fps=fps)
         temp_clips.append(clip)
