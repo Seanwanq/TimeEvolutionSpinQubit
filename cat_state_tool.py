@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.special import factorial
+from scipy.signal import square
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import qutip as qt
@@ -12,7 +13,7 @@ import gc
 
 class TimeDependentCatStateEvolution:
     def __init__(
-        self, hilbert_dimension, time_total, timesteps, kappa, omega_r, gamma_t
+        self, hilbert_dimension, time_total, timesteps, kappa, omega_r, gamma_t, gate_frequency
     ):
         self.hilbert_dimension = hilbert_dimension
         self.time_total = time_total
@@ -25,6 +26,7 @@ class TimeDependentCatStateEvolution:
         self.adag = self.a.conj().T
         self.state_plus = self.basis(2, 0)
         self.state_down = self.basis(2, 1)
+        self.gate_frequency = gate_frequency
 
     def annihilation(self, hilbert_dimension):
         a = np.zeros((hilbert_dimension, hilbert_dimension), dtype=complex)
@@ -86,7 +88,21 @@ class TimeDependentCatStateEvolution:
         if not np.isclose(trace, 1.0, rtol=1e-10):
             print(f"Warning: Initial density matrix trace = {trace}")
             pass
+        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'Z')
+        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'H')
+        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'H')
+        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'Z')
         return density_matrix
+    
+    def apply_gates_to_density_matrix(self, rho: np.ndarray, gate_type: str) -> np.ndarray:
+        if gate_type == 'H':
+            gate = (1/np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=np.complex128)
+        elif gate_type == 'Z':
+            gate = np.array([[1, 0], [0, -1]], dtype=np.complex128)
+        else:
+            raise ValueError("Invalid gate type. Choose 'H' or 'Z'.")
+        full_gate = np.kron(gate, np.eye(self.hilbert_dimension))
+        return full_gate @ rho @ full_gate.conjugate().transpose()
 
     def lindblad_dissipator(self, t, density_matrix):
         identity = np.eye(2, dtype=complex)
@@ -115,6 +131,13 @@ class TimeDependentCatStateEvolution:
         dt = self.time_total / self.timesteps
         density_matrix_history = [density_matrix.copy()]
 
+        if self.gate_frequency != 0:
+            gate_period = 1 / self.gate_frequency
+            print(gate_period)
+            last_gate_time = 0
+            gate_sequence = ['H', 'Z']
+            current_gate_idx = 1
+
         def check_density_matrix(rho, step):
             if np.any(np.isnan(rho)):
                 raise ValueError(f"NaN detected at step {step}")
@@ -128,6 +151,32 @@ class TimeDependentCatStateEvolution:
 
         for i in tqdm(range(self.timesteps)):
             t = times[i]
+
+            if self.gate_frequency != 0:
+                current_time = times[i]
+
+                if current_time - last_gate_time >= gate_period: # type: ignore
+                    print("Applying gates")
+                    print(current_time)
+                    print(last_gate_time) # type: ignore
+
+                    # Apply gate
+                    gate_type = gate_sequence[current_gate_idx] # type: ignore
+
+                    print(gate_type)
+
+                    density_matrix = self.apply_gates_to_density_matrix(density_matrix, gate_type)
+
+                    current_gate_idx = (current_gate_idx + 1) % len(gate_sequence) # type: ignore
+
+                    # To apply the other gate after the first one
+                    gate_type = gate_sequence[current_gate_idx] # type: ignore
+                    density_matrix = self.apply_gates_to_density_matrix(density_matrix, gate_type)
+
+                    print(gate_type)
+
+                    last_gate_time = current_time
+
             try:
                 k1 = dt * (
                     -1j * self.hamiltonian_density_matrix_commutator(t, density_matrix)
@@ -285,3 +334,8 @@ def animate_wigner_2d(foldername, filename="wigner_2d", fps=5, batch_size=10):
 
     final_clip = concatenate_videoclips(temp_clips)
     final_clip.write_videofile(filename + ".mp4", codec="libx264", fps=fps)
+
+def gamma_t_square_wave(t, frequency, amplitude=1.0, duty=0.5):
+    if not 0 < duty < 1:
+        raise ValueError("Duty cycle must be between 0 and 1.")
+    return amplitude * square(2 * np.pi * frequency * t, duty=duty)
