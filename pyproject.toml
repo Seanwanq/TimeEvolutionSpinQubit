@@ -12,6 +12,7 @@ dependencies = [
     "matplotlib>=3.10.0",
     "moviepy>=2.1.1",
     "numpy>=2.0.2",
+    "pandas>=2.2.3",
     "qutip>=5.1.0",
     "scipy>=1.15.0",
     "tqdm>=4.67.1",
