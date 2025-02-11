@@ -2,6 +2,7 @@ import numpy as np
 from scipy.special import factorial
 from scipy.signal import square
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, Normalize
 from tqdm import tqdm
 import qutip as qt
 from qutip import Qobj
@@ -13,7 +14,14 @@ import gc
 
 class TimeDependentCatStateEvolution:
     def __init__(
-        self, hilbert_dimension, time_total, timesteps, kappa, omega_r, gamma_t, gate_frequency
+        self,
+        hilbert_dimension,
+        time_total,
+        timesteps,
+        kappa,
+        omega_r,
+        gamma_t,
+        gate_frequency,
     ):
         self.hilbert_dimension = hilbert_dimension
         self.time_total = time_total
@@ -43,7 +51,7 @@ class TimeDependentCatStateEvolution:
         return basis
 
     def alpha(self, t):
-        return np.complex128(0.0 + 0j)
+        return np.complex128(0.0 + 0.0j)
 
     def coherent(self, t, orientation):
         state = np.zeros((self.hilbert_dimension, 1), dtype=complex)
@@ -75,7 +83,9 @@ class TimeDependentCatStateEvolution:
         vacuum = self.coherent(0, 0)
         initial_state = np.kron(spin_down, vacuum)
         H = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
+        I = np.array([[1, 0], [0, 1]], dtype=complex)
         Z = np.array([[1, 0], [0, -1]], dtype=complex)
+        X = np.array([[0, 1], [1, 0]], dtype=complex)
         combined_gate = Z @ H
         combined_total = np.kron(combined_gate, np.eye(self.hilbert_dimension))
         final_state = combined_total @ initial_state
@@ -83,24 +93,25 @@ class TimeDependentCatStateEvolution:
 
     def density_matrix_initial(self):
         cat_state = self.prepare_initial_state()
+        # cat_state = self.time_dependent_cat_state(0)
         density_matrix = np.outer(cat_state, cat_state.conj())
         trace = np.abs(np.trace(density_matrix))
         if not np.isclose(trace, 1.0, rtol=1e-10):
             print(f"Warning: Initial density matrix trace = {trace}")
             pass
-        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'Z')
-        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'H')
-        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'H')
-        density_matrix = self.apply_gates_to_density_matrix(density_matrix, 'Z')
-        return density_matrix
-    
-    def apply_gates_to_density_matrix(self, rho: np.ndarray, gate_type: str) -> np.ndarray:
-        if gate_type == 'H':
-            gate = (1/np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=np.complex128)
-        elif gate_type == 'Z':
+        return density_matrix / trace
+
+    def apply_gates_to_density_matrix(
+        self, rho: np.ndarray, gate_type: str
+    ) -> np.ndarray:
+        if gate_type == "H":
+            gate = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=np.complex128)
+        elif gate_type == "Z":
             gate = np.array([[1, 0], [0, -1]], dtype=np.complex128)
+        elif gate_type == "I":
+            gate = np.array([[1, 0], [0, 1]], dtype=np.complex128)
         else:
-            raise ValueError("Invalid gate type. Choose 'H' or 'Z'.")
+            raise ValueError("Invalid gate type. Choose 'H', 'I' or 'Z'.")
         full_gate = np.kron(gate, np.eye(self.hilbert_dimension))
         return full_gate @ rho @ full_gate.conjugate().transpose()
 
@@ -123,6 +134,13 @@ class TimeDependentCatStateEvolution:
         hamiltonian_tilde = self.gamma_t(t) * np.kron(
             np.array([[1, 0], [0, -1]]), (a_tilde + adag_tilde)
         )
+        # TESTING PURPOSES
+        # hamiltonian_tilde = 0 * hamiltonian_tilde
+
+        # sigma_x
+        # hamiltonian_tilde = self.gamma_t(t) * np.kron(
+        #     np.array([[0, 1], [1, 0]]), (a_tilde + adag_tilde)
+        # )
         return hamiltonian_tilde @ density_matrix - density_matrix @ hamiltonian_tilde
 
     def simulation_evolution(self):
@@ -131,11 +149,14 @@ class TimeDependentCatStateEvolution:
         dt = self.time_total / self.timesteps
         density_matrix_history = [density_matrix.copy()]
 
-        if self.gate_frequency != 0:
+        if self.gate_frequency < 0:
+            raise ValueError("Gate frequency must be greater than or equal to 0.")
+
+        if self.gate_frequency > 0:
             gate_period = 1 / self.gate_frequency
             print(gate_period)
             last_gate_time = 0
-            gate_sequence = ['H', 'Z']
+            gate_sequence = ["H", "Z"]
             current_gate_idx = 1
 
         def check_density_matrix(rho, step):
@@ -146,32 +167,37 @@ class TimeDependentCatStateEvolution:
             if not 0.99 < trace < 1.01:
                 # raise ValueError(f"Trace not preserved at step {step}: {trace}")
                 rho = rho / trace
+                pass
             if not np.allclose(rho, rho.conj().T):
                 raise ValueError(f"Non-hermitian matrix at step {step}")
 
         for i in tqdm(range(self.timesteps)):
             t = times[i]
 
-            if self.gate_frequency != 0:
+            if self.gate_frequency > 0:
                 current_time = times[i]
 
-                if current_time - last_gate_time >= gate_period: # type: ignore
+                if current_time - last_gate_time >= gate_period:  # type: ignore
                     print("Applying gates")
                     print(current_time)
-                    print(last_gate_time) # type: ignore
+                    print(last_gate_time)  # type: ignore
 
                     # Apply gate
-                    gate_type = gate_sequence[current_gate_idx] # type: ignore
+                    gate_type = gate_sequence[current_gate_idx]  # type: ignore
 
                     print(gate_type)
 
-                    density_matrix = self.apply_gates_to_density_matrix(density_matrix, gate_type)
+                    density_matrix = self.apply_gates_to_density_matrix(
+                        density_matrix, gate_type
+                    )
 
-                    current_gate_idx = (current_gate_idx + 1) % len(gate_sequence) # type: ignore
+                    current_gate_idx = (current_gate_idx + 1) % len(gate_sequence)  # type: ignore
 
                     # To apply the other gate after the first one
-                    gate_type = gate_sequence[current_gate_idx] # type: ignore
-                    density_matrix = self.apply_gates_to_density_matrix(density_matrix, gate_type)
+                    gate_type = gate_sequence[current_gate_idx]  # type: ignore
+                    density_matrix = self.apply_gates_to_density_matrix(
+                        density_matrix, gate_type
+                    )
 
                     print(gate_type)
 
@@ -316,6 +342,57 @@ class TimeDependentCatStateEvolution:
             plt.close(fig)
             filename = filename_backup
 
+    def plot_wigner_2d_multi_special(
+        self,
+        density_matrix_history_spin_up,
+        density_matrix_history_spin_down,
+        xvec,
+        pvec,
+        frame_number,
+        filename="wigner_2d",
+    ):
+        filename_backup = filename
+        if frame_number > len(density_matrix_history_spin_down):
+            raise ValueError("Frame number exceeds the number of density matrices.")
+        indices = np.linspace(
+            0, len(density_matrix_history_spin_down) - 1, frame_number, dtype=int
+        )
+
+        selected_density_matrices_spin_down = [
+            density_matrix_history_spin_down[int(i)] for i in indices
+        ]
+        selected_density_matrices_spin_up = [
+            density_matrix_history_spin_up[int(i)] for i in indices
+        ]
+        times = [i * self.dt for i in indices]
+        for i in tqdm(range(0, len(selected_density_matrices_spin_down))):
+            plt.clf()
+            plt.close("all")
+            gc.collect()
+
+            fig, ax = plt.subplots(figsize=(10, 8))
+            wigner_spin_down = self.wigner_spin_blocks_sum(
+                selected_density_matrices_spin_down[i], xvec, pvec
+            )
+            wigner_spin_up = self.wigner_spin_blocks_sum(
+                selected_density_matrices_spin_up[i], xvec, pvec
+            )
+            x, y = np.meshgrid(xvec, pvec)
+            # wlim = max(abs(wigner.min()), abs(wigner.max()))
+            wlim = 0.68
+            levels = np.linspace(-wlim, wlim, 100)
+            c1 = ax.contourf(x, y, wigner_spin_down, levels=levels, cmap="seismic", alpha=0.3)
+            c2 = ax.contourf(x, y, wigner_spin_up, levels=levels, cmap="RdBu", alpha=0.3)
+            plt.colorbar(c1, ax=ax, label='Spin Down')
+            plt.colorbar(c2, ax=ax, label='Spin Up')
+            ax.set_xlabel(r"$\mathrm{Re}\left( \alpha \right)$")
+            ax.set_ylabel(r"$\mathrm{Im}\left( \alpha \right)$")
+            ax.set_title(f"Wigner function of time {times[i]: 2f}")
+            filename = filename + "_time_{:.2f}.png".format(times[i])
+            fig.savefig(filename, dpi=500)
+            plt.close(fig)
+            filename = filename_backup
+
 
 def animate_wigner_2d(foldername, filename="wigner_2d", fps=5, batch_size=10):
     png_files = [f for f in os.listdir(foldername) if f.endswith(".png")]
@@ -335,7 +412,25 @@ def animate_wigner_2d(foldername, filename="wigner_2d", fps=5, batch_size=10):
     final_clip = concatenate_videoclips(temp_clips)
     final_clip.write_videofile(filename + ".mp4", codec="libx264", fps=fps)
 
+
 def gamma_t_square_wave(t, frequency, amplitude=1.0, duty=0.5):
     if not 0 < duty < 1:
         raise ValueError("Duty cycle must be between 0 and 1.")
-    return amplitude * square(2 * np.pi * frequency * t, duty=duty)
+    return amplitude * square(frequency * t, duty=duty)
+
+
+def clean_subdirectory(subdirectory: str):
+    develop_path = os.path.join(os.getcwd(), subdirectory)
+    if not os.path.exists(develop_path):
+        print(f"The directory {develop_path} does not exist.")
+        return
+    for filename in os.listdir(develop_path):
+        file_path = os.path.join(develop_path, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                os.rmdir(file_path)
+        except Exception as e:
+            print(f"Failed to delete {file_path}. Reason: {e}")
+    print(f"Cleaned the directory {develop_path}.")
