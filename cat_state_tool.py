@@ -1,3 +1,5 @@
+from enum import Enum
+from typing import Literal
 import numpy as np
 from scipy.special import factorial
 from scipy.signal import square
@@ -19,6 +21,7 @@ class TimeDependentCatStateEvolution:
         time_total,
         timesteps,
         kappa,
+        omega_b,
         omega_r,
         gamma_t,
         gate_frequency,
@@ -28,6 +31,7 @@ class TimeDependentCatStateEvolution:
         self.timesteps = timesteps
         self.dt = time_total / timesteps
         self.kappa = kappa
+        self.omega_b = omega_b
         self.omega_r = omega_r
         self.gamma_t = gamma_t
         self.a = self.annihilation(self.hilbert_dimension)
@@ -87,6 +91,7 @@ class TimeDependentCatStateEvolution:
         Z = np.array([[1, 0], [0, -1]], dtype=complex)
         X = np.array([[0, 1], [1, 0]], dtype=complex)
         combined_gate = Z @ H
+        # combined_gate = I @ X
         combined_total = np.kron(combined_gate, np.eye(self.hilbert_dimension))
         final_state = combined_total @ initial_state
         return final_state / np.linalg.norm(final_state)
@@ -127,13 +132,30 @@ class TimeDependentCatStateEvolution:
         term3 = 0.5 * density_matrix @ adag_tilde @ a_tilde
         return term1 - term2 - term3
 
-    def hamiltonian_density_matrix_commutator(self, t, density_matrix):
+    def prepared_hamiltonian(self, t, index):
         phase = np.exp(-1j * t * self.omega_r)
         a_tilde = self.a * phase
         adag_tilde = self.adag * phase.conj()
-        hamiltonian_tilde = self.gamma_t(t) * np.kron(
-            np.array([[1, 0], [0, -1]]), (a_tilde + adag_tilde)
-        )
+        match index:
+            case PreparedHamiltonianEnum.SIGMAZ:
+                hamiltonian = self.gamma_t(t) * np.kron(
+                    np.array([[1, 0], [0, -1]]), (a_tilde + adag_tilde)
+                )
+                return hamiltonian
+            case PreparedHamiltonianEnum.SIGMAX:
+                hamiltonian = self.gamma_t(t) * np.kron(
+                    (
+                        np.cos(self.omega_b * t) * np.array([[0, 1], [1, 0]])
+                        + np.sin(self.omega_b * t) * np.array([[0, -1j], [1j, 0]])
+                    ),
+                    (a_tilde + adag_tilde),
+                )
+                return hamiltonian
+            case _:
+                raise IndexError("Invalid Hamiltonian Index")
+
+    def hamiltonian_density_matrix_commutator(self, t, density_matrix):
+        hamiltonian_tilde = self.prepared_hamiltonian(t, PreparedHamiltonianEnum.SIGMAX)
         # TESTING PURPOSES
         # hamiltonian_tilde = 0 * hamiltonian_tilde
 
@@ -154,7 +176,7 @@ class TimeDependentCatStateEvolution:
 
         if self.gate_frequency > 0:
             gate_period = 1 / self.gate_frequency
-            print(gate_period)
+            # print(gate_period)
             last_gate_time = 0
             gate_sequence = ["H", "Z"]
             current_gate_idx = 1
@@ -178,14 +200,14 @@ class TimeDependentCatStateEvolution:
                 current_time = times[i]
 
                 if current_time - last_gate_time >= gate_period:  # type: ignore
-                    print("Applying gates")
-                    print(current_time)
-                    print(last_gate_time)  # type: ignore
+                    # print("Applying gates")
+                    # print(current_time)
+                    # print(last_gate_time)  # type: ignore
 
                     # Apply gate
                     gate_type = gate_sequence[current_gate_idx]  # type: ignore
 
-                    print(gate_type)
+                    # print(gate_type)
 
                     density_matrix = self.apply_gates_to_density_matrix(
                         density_matrix, gate_type
@@ -199,7 +221,7 @@ class TimeDependentCatStateEvolution:
                         density_matrix, gate_type
                     )
 
-                    print(gate_type)
+                    # print(gate_type)
 
                     last_gate_time = current_time
 
@@ -381,10 +403,14 @@ class TimeDependentCatStateEvolution:
             # wlim = max(abs(wigner.min()), abs(wigner.max()))
             wlim = 0.68
             levels = np.linspace(-wlim, wlim, 100)
-            c1 = ax.contourf(x, y, wigner_spin_down, levels=levels, cmap="seismic", alpha=0.3)
-            c2 = ax.contourf(x, y, wigner_spin_up, levels=levels, cmap="RdBu", alpha=0.3)
-            plt.colorbar(c1, ax=ax, label='Spin Down')
-            plt.colorbar(c2, ax=ax, label='Spin Up')
+            c1 = ax.contourf(
+                x, y, wigner_spin_down, levels=levels, cmap="seismic", alpha=0.3
+            )
+            c2 = ax.contourf(
+                x, y, wigner_spin_up, levels=levels, cmap="RdBu", alpha=0.3
+            )
+            plt.colorbar(c1, ax=ax, label="Spin Down")
+            plt.colorbar(c2, ax=ax, label="Spin Up")
             ax.set_xlabel(r"$\mathrm{Re}\left( \alpha \right)$")
             ax.set_ylabel(r"$\mathrm{Im}\left( \alpha \right)$")
             ax.set_title(f"Wigner function of time {times[i]: 2f}")
@@ -434,3 +460,8 @@ def clean_subdirectory(subdirectory: str):
         except Exception as e:
             print(f"Failed to delete {file_path}. Reason: {e}")
     print(f"Cleaned the directory {develop_path}.")
+
+
+class PreparedHamiltonianEnum(Enum):
+    SIGMAZ = "sigma_z"
+    SIGMAX = "sigma_x"
